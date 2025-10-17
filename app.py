@@ -182,9 +182,36 @@ def load_sheet(sheet_url_or_id: str):
         st.info(f"📂 Abrindo Sheet com ID: {sheet_id}...")
         sh = client.open_by_key(sheet_id)
         st.success(f"✅ Sheet aberto: {sh.title}")
-    except Exception as e:
-        error_msg = f"❌ Falha ao abrir Sheet (ID: {sheet_id}): {e}"
+    except gspread.exceptions.APIError as e:
+        error_msg = f"❌ Erro da API do Google: {e.response.status_code}"
         st.error(error_msg)
+        st.code(f"Status: {e.response.status_code}\nResposta: {e.response.text}", language="text")
+        st.info(
+            "**Possíveis causas:**\n"
+            "- API do Google Sheets desativada no projeto\n"
+            "- Quota excedida\n"
+            "- Permissões insuficientes\n"
+        )
+        return pd.DataFrame(), pd.DataFrame(), error_msg
+    except gspread.exceptions.SpreadsheetNotFound:
+        error_msg = f"❌ Sheet não encontrado! ID: {sheet_id}"
+        st.error(error_msg)
+        st.info(
+            "**Possíveis causas:**\n"
+            "- O Sheet foi apagado\n"
+            "- O Sheet não foi partilhado com a Service Account\n"
+            "- O ID está incorreto\n"
+        )
+        return pd.DataFrame(), pd.DataFrame(), error_msg
+    except Exception as e:
+        error_msg = f"❌ Erro inesperado: {type(e).__name__}"
+        st.error(error_msg)
+        st.code(f"Tipo: {type(e).__name__}\nMensagem: {str(e)}", language="text")
+        
+        # Tenta extrair mais informações
+        if hasattr(e, 'response'):
+            st.code(f"Response: {e.response}", language="text")
+        
         st.info(
             "**Verifique:**\n"
             "- O Sheet ID está correto\n"
@@ -199,14 +226,20 @@ def load_sheet(sheet_url_or_id: str):
         ws_ml = sh.worksheet("modelos_loras")
         st.success("✅ Folha 'modelos_loras' encontrada")
     except Exception as e:
-        return pd.DataFrame(), pd.DataFrame(), f"❌ Folha 'modelos_loras' não encontrada: {e}"
+        error_msg = f"❌ Folha 'modelos_loras' não encontrada: {type(e).__name__}: {str(e)}"
+        st.error(error_msg)
+        st.code(str(e), language="text")
+        return pd.DataFrame(), pd.DataFrame(), error_msg
     
     try:
         st.info("📄 Carregando folha 'workflows'...")
         ws_wf = sh.worksheet("workflows")
         st.success("✅ Folha 'workflows' encontrada")
     except Exception as e:
-        return pd.DataFrame(), pd.DataFrame(), f"❌ Folha 'workflows' não encontrada: {e}"
+        error_msg = f"❌ Folha 'workflows' não encontrada: {type(e).__name__}: {str(e)}"
+        st.error(error_msg)
+        st.code(str(e), language="text")
+        return pd.DataFrame(), pd.DataFrame(), error_msg
     
     try:
         st.info("📊 Lendo dados...")
@@ -214,7 +247,10 @@ def load_sheet(sheet_url_or_id: str):
         df_wf = pd.DataFrame(ws_wf.get_all_records()).fillna("")
         st.success(f"✅ Dados carregados: {len(df_ml)} modelos/LoRAs, {len(df_wf)} workflows")
     except Exception as e:
-        return pd.DataFrame(), pd.DataFrame(), f"❌ Erro ao ler dados do Sheet: {e}"
+        error_msg = f"❌ Erro ao ler dados: {type(e).__name__}: {str(e)}"
+        st.error(error_msg)
+        st.code(str(e), language="text")
+        return pd.DataFrame(), pd.DataFrame(), error_msg
     
     # Normalização
     df_ml = normalize_columns(df_ml).astype(str)
