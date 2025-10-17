@@ -3,7 +3,6 @@ import re
 import json
 import pandas as pd
 import streamlit as st
-
 # Dependências Google (apenas necessárias se usar Service Account)
 import gspread
 from google.oauth2.service_account import Credentials
@@ -54,6 +53,55 @@ def ensure_cols(df, cols):
     return df
 
 # =========================
+# DEBUG HELPER
+# =========================
+def show_debug_info():
+    """Mostra informações de debug sobre os Secrets"""
+    st.sidebar.markdown("---")
+    st.sidebar.subheader("🐛 Debug Info")
+    
+    # Verifica se tem secrets
+    has_gcp = "gcp_service_account" in st.secrets
+    has_sheet_url = "sheet_url" in st.secrets
+    
+    st.sidebar.write(f"✅ gcp_service_account: {'Sim' if has_gcp else '❌ Não'}")
+    st.sidebar.write(f"✅ sheet_url: {'Sim' if has_sheet_url else '❌ Não'}")
+    
+    if has_gcp:
+        try:
+            sa = dict(st.secrets["gcp_service_account"])
+            st.sidebar.write(f"📧 Service Account Email:")
+            st.sidebar.code(sa.get("client_email", "N/A"), language="text")
+            
+            # Valida campos obrigatórios
+            required_fields = ["type", "project_id", "private_key_id", "private_key", "client_email", "client_id"]
+            missing = [f for f in required_fields if f not in sa]
+            
+            if missing:
+                st.sidebar.error(f"❌ Campos faltando: {', '.join(missing)}")
+            else:
+                st.sidebar.success("✅ Todos os campos obrigatórios presentes")
+                
+            # Valida private_key
+            pk = sa.get("private_key", "")
+            if pk:
+                if not pk.startswith("-----BEGIN PRIVATE KEY-----"):
+                    st.sidebar.error("❌ private_key não começa com '-----BEGIN PRIVATE KEY-----'")
+                elif not pk.endswith("-----END PRIVATE KEY-----\n"):
+                    st.sidebar.warning("⚠️ private_key pode não terminar corretamente")
+                else:
+                    st.sidebar.success("✅ private_key parece válida")
+                    
+                # Conta linhas
+                lines = pk.count("\n")
+                st.sidebar.write(f"📝 private_key tem {lines} quebras de linha")
+            else:
+                st.sidebar.error("❌ private_key está vazia")
+                
+        except Exception as e:
+            st.sidebar.error(f"❌ Erro ao ler secrets: {e}")
+
+# =========================
 # AUTENTICAÇÃO GOOGLE
 # =========================
 @st.cache_resource
@@ -64,79 +112,114 @@ def get_google_client():
     - variável de ambiente GOOGLE_CREDENTIALS (JSON string), para uso local.
     """
     credentials_dict = None
-
+    
     # 1) Streamlit Cloud Secrets
     if "gcp_service_account" in st.secrets:
-        credentials_dict = dict(st.secrets["gcp_service_account"])
-
+        st.info("🔑 Usando credenciais do Streamlit Secrets...")
+        try:
+            credentials_dict = dict(st.secrets["gcp_service_account"])
+            st.success(f"✅ Credenciais carregadas para: {credentials_dict.get('client_email', 'N/A')}")
+        except Exception as e:
+            st.error(f"❌ Erro ao ler secrets: {e}")
+            return None
+    
     # 2) Ambiente local (opcional)
     if not credentials_dict:
+        st.warning("⚠️ Sem credenciais no Streamlit Secrets, tentando variável de ambiente...")
         try:
             env_json = os.environ.get("GOOGLE_CREDENTIALS", "")
             if env_json.strip():
                 credentials_dict = json.loads(env_json)
-        except Exception:
-            pass
-
+                st.success("✅ Credenciais carregadas da variável de ambiente")
+        except Exception as e:
+            st.error(f"❌ Erro ao ler variável de ambiente: {e}")
+    
     scopes = [
         "https://www.googleapis.com/auth/spreadsheets.readonly",
         "https://www.googleapis.com/auth/drive.readonly",
     ]
-
+    
     if credentials_dict:
         try:
+            st.info("🔐 Autenticando com Google...")
             creds = Credentials.from_service_account_info(credentials_dict, scopes=scopes)
-            return gspread.authorize(creds)
+            client = gspread.authorize(creds)
+            st.success("✅ Autenticação bem-sucedida!")
+            return client
         except Exception as e:
             st.error(f"❌ Erro ao autenticar Service Account: {e}")
-            st.info("Dica: verifique o bloco [gcp_service_account] nos Secrets e as quebras de linha da private_key.")
+            st.code(str(e), language="text")
+            st.info(
+                "**Possíveis causas:**\n"
+                "- private_key com formato incorreto (faltam quebras de linha \\n)\n"
+                "- Service Account desativada no Google Cloud\n"
+                "- Campos obrigatórios faltando no JSON\n"
+            )
             return None
     else:
-        # Sem Service Account — será necessário o Sheet estar com “Anyone with the link: Viewer”
+        st.error("❌ Nenhuma credencial encontrada!")
+        st.info(
+            "**Configure os Secrets:**\n"
+            "1. Vá em Settings → Secrets no Streamlit Cloud\n"
+            "2. Adicione o bloco [gcp_service_account] com o JSON da Service Account\n"
+        )
         return None
 
 @st.cache_data(ttl=300)
 def load_sheet(sheet_url_or_id: str):
     """
     Carrega as folhas 'modelos_loras' e 'workflows' do Google Sheets.
-    - Se houver Service Account, usa gspread (open_by_key).
-    - Caso contrário, tenta gspread anónimo (falhará se o Sheet não estiver público).
     """
     sheet_id = extract_sheet_id(sheet_url_or_id)
+    st.info(f"📋 Sheet ID extraído: `{sheet_id}`")
+    
     client = get_google_client()
-
+    
+    if not client:
+        return pd.DataFrame(), pd.DataFrame(), "❌ Falha na autenticação (veja mensagens acima)"
+    
     try:
-        if client:
-            sh = client.open_by_key(sheet_id)
-        else:
-            # Sem credenciais, tentativa com gspread anónimo não é suportada oficialmente.
-            # Usuário deve colocar o Sheet como "Anyone with the link: Viewer" e ainda assim
-            # open_by_key pode exigir credenciais. Mantemos a necessidade de Service Account
-            # para leitura segura. Logo, explicitamos o erro amigável:
-            raise RuntimeError("Sem credenciais. Configure a Service Account OU use Secrets.")
+        st.info(f"📂 Abrindo Sheet com ID: {sheet_id}...")
+        sh = client.open_by_key(sheet_id)
+        st.success(f"✅ Sheet aberto: {sh.title}")
     except Exception as e:
-        return pd.DataFrame(), pd.DataFrame(), f"Falha ao abrir Sheet (ID: {sheet_id}): {e}"
-
+        error_msg = f"❌ Falha ao abrir Sheet (ID: {sheet_id}): {e}"
+        st.error(error_msg)
+        st.info(
+            "**Verifique:**\n"
+            "- O Sheet ID está correto\n"
+            "- O Sheet foi partilhado com o email da Service Account\n"
+            "- O Sheet não foi apagado ou movido\n"
+        )
+        return pd.DataFrame(), pd.DataFrame(), error_msg
+    
+    # Carrega folhas
     try:
+        st.info("📄 Carregando folha 'modelos_loras'...")
         ws_ml = sh.worksheet("modelos_loras")
+        st.success("✅ Folha 'modelos_loras' encontrada")
     except Exception as e:
-        return pd.DataFrame(), pd.DataFrame(), f"Folha 'modelos_loras' não encontrada: {e}"
-
+        return pd.DataFrame(), pd.DataFrame(), f"❌ Folha 'modelos_loras' não encontrada: {e}"
+    
     try:
+        st.info("📄 Carregando folha 'workflows'...")
         ws_wf = sh.worksheet("workflows")
+        st.success("✅ Folha 'workflows' encontrada")
     except Exception as e:
-        return pd.DataFrame(), pd.DataFrame(), f"Folha 'workflows' não encontrada: {e}"
-
+        return pd.DataFrame(), pd.DataFrame(), f"❌ Folha 'workflows' não encontrada: {e}"
+    
     try:
+        st.info("📊 Lendo dados...")
         df_ml = pd.DataFrame(ws_ml.get_all_records()).fillna("")
         df_wf = pd.DataFrame(ws_wf.get_all_records()).fillna("")
+        st.success(f"✅ Dados carregados: {len(df_ml)} modelos/LoRAs, {len(df_wf)} workflows")
     except Exception as e:
-        return pd.DataFrame(), pd.DataFrame(), f"Erro ao ler dados do Sheet: {e}"
-
+        return pd.DataFrame(), pd.DataFrame(), f"❌ Erro ao ler dados do Sheet: {e}"
+    
     # Normalização
     df_ml = normalize_columns(df_ml).astype(str)
     df_wf = normalize_columns(df_wf).astype(str)
-
+    
     return df_ml, df_wf, None
 
 def filter_modelos_loras(df, filtro_tipo, filtro_base, filtro_estilo, filtro_search):
@@ -177,28 +260,33 @@ def filter_workflows(df, filtro_objetivo, filtro_search):
 # =========================
 # ENTRADA: Sheet URL/ID
 # =========================
-DEFAULT_URL = "https://docs.google.com/spreadsheets/d/SEU_SHEET_ID_AQUI/edit"
+DEFAULT_URL = "1VucFVrJuS7iIwXA3kMDb2pvHnGqBRbRyAkWv73xdLvw"
 SHEET_URL = st.secrets.get("sheet_url", DEFAULT_URL)
 
 with st.sidebar:
     st.header("🛠️ Configuração")
-    st.write("Fonte:", "Google Sheets")
+    st.write("**Fonte:** Google Sheets")
     st.text_input("Sheet URL ou ID", value=SHEET_URL, key="sheet_url_input")
+    
     colA, colB = st.columns(2)
     with colA:
         if st.button("🔄 Recarregar dados", use_container_width=True):
             st.cache_data.clear()
+            st.cache_resource.clear()
             st.rerun()
     with colB:
-        show_debug = st.checkbox("Modo debug", value=False)
-
+        show_debug = st.checkbox("Modo debug", value=True)
+    
+    if show_debug:
+        show_debug_info()
+    
     st.markdown("---")
     st.subheader("🔎 Filtros - Modelos/LoRAs")
     filtro_tipo = st.multiselect("Tipo", ["Modelo", "LoRA"], default=[])
     filtro_base = st.multiselect("Base Model", ["SD 1.5", "SDXL", "FLUX", "Outro"], default=[])
     filtro_estilo = st.text_input("Estilo/Utilização contém", "", placeholder="ex: Retrato, Arquitetura...")
     filtro_search_ml = st.text_input("Pesquisa livre (nome/notas)", "", placeholder="ex: realistic, portrait...")
-
+    
     st.markdown("---")
     st.subheader("🔎 Filtros - Workflows")
     filtro_objetivo = st.text_input("Objetivo contém", "", placeholder="ex: Retrato realista...")
@@ -212,12 +300,6 @@ with st.spinner("📥 Carregando dados do Google Sheet..."):
 
 if error:
     st.error(f"❌ {error}")
-    st.info(
-        "Verifique:\n"
-        "- A URL/ID do Sheet está correta\n"
-        "- O Sheet tem as folhas 'modelos_loras' e 'workflows'\n"
-        "- A Service Account tem acesso (ou configure nos Secrets)\n"
-    )
     st.stop()
 
 # =========================
@@ -240,9 +322,8 @@ tab1, tab2, tab3 = st.tabs(["📦 Modelos/LoRAs", "⚡ Workflows", "ℹ️ Sobre
 
 with tab1:
     st.subheader("📦 Modelos e LoRAs")
-
     filtered_ml = filter_modelos_loras(df_ml, filtro_tipo, filtro_base, filtro_estilo, filtro_search_ml)
-
+    
     col1, col2 = st.columns([3, 1])
     with col1:
         st.caption(f"✅ {len(filtered_ml)} de {len(df_ml)} itens encontrados")
@@ -250,21 +331,20 @@ with tab1:
         if len(filtered_ml) > 0:
             csv = filtered_ml.to_csv(index=False).encode("utf-8")
             st.download_button("📥 Exportar CSV", csv, "modelos_loras_filtrados.csv", "text/csv", use_container_width=True)
-
+    
     if len(filtered_ml) > 0:
         st.dataframe(
             filtered_ml[["tipo", "nome", "base_model", "estilo_utilizacao", "dimensions_recomendadas", "strength_tipica"]],
             use_container_width=True,
             height=350
         )
-
+        
         st.markdown("---")
         st.subheader("🔎 Detalhes")
-
         nomes = filtered_ml["nome"].tolist()
         sel = st.selectbox("Selecione um item:", nomes, key="ml_sel")
         row = filtered_ml[filtered_ml["nome"] == sel].iloc[0].to_dict()
-
+        
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("Tipo", row.get("tipo", "—"))
@@ -282,7 +362,7 @@ with tab1:
             fonte = row.get("fonte_url", "")
             if fonte and fonte.startswith("http"):
                 st.markdown(f"🔗 [Abrir fonte/URL]({fonte})")
-
+        
         notas = row.get("notas", "")
         if notas:
             st.markdown("**📝 Notas:**")
@@ -292,9 +372,8 @@ with tab1:
 
 with tab2:
     st.subheader("⚡ Workflows")
-
     filtered_wf = filter_workflows(df_wf, filtro_objetivo, filtro_search_wf)
-
+    
     col1, col2 = st.columns([3, 1])
     with col1:
         st.caption(f"✅ {len(filtered_wf)} de {len(df_wf)} workflows encontrados")
@@ -302,21 +381,20 @@ with tab2:
         if len(filtered_wf) > 0:
             csv = filtered_wf.to_csv(index=False).encode("utf-8")
             st.download_button("📥 Exportar CSV", csv, "workflows_filtrados.csv", "text/csv", use_container_width=True)
-
+    
     if len(filtered_wf) > 0:
         st.dataframe(
             filtered_wf[["nome", "objetivo", "tempo_medio", "qualidade_esperada", "versao"]],
             use_container_width=True,
             height=350
         )
-
+        
         st.markdown("---")
         st.subheader("🔎 Detalhes do Workflow")
-
         nomes = filtered_wf["nome"].tolist()
         sel = st.selectbox("Selecione um workflow:", nomes, key="wf_sel")
         row = filtered_wf[filtered_wf["nome"] == sel].iloc[0].to_dict()
-
+        
         col1, col2, col3 = st.columns(3)
         with col1:
             st.metric("Objetivo", row.get("objetivo", "—"))
@@ -330,17 +408,17 @@ with tab2:
             if link:
                 st.text("Link/Caminho:")
                 st.code(link)
-
+        
         deps = row.get("dependencias", "")
         if deps:
             st.markdown("**📦 Dependências:**")
             st.info(deps)
-
+        
         nodes = row.get("nodes_principais", "")
         if nodes:
             st.markdown("**🛠️ Nodes principais:**")
             st.code(nodes)
-
+        
         ks = row.get("ksampler_recomendado", "")
         if ks:
             st.markdown("**⚙️ KSampler recomendado:**")
@@ -372,9 +450,9 @@ Use o botão "🔄 Recarregar dados" para forçar atualização.
 
 ### 👤 Autor
 **Sérgio Duarte**  
-🌐 sergioduarte.pt  
+🌐 [sergioduarte.pt](https://sergioduarte.pt)  
 📧 fotografia@sergioduarte.pt
 """)
-
-st.markdown("---")
-st.caption("🎨 Catálogo ComfyUI | Desenvolvido com Streamlit | © 2025 Sérgio Duarte")
+    
+    st.markdown("---")
+    st.caption("🎨 Catálogo ComfyUI | Desenvolvido com Streamlit | © 2025 Sérgio Duarte")
