@@ -1,6 +1,7 @@
 import os
 import re
 import json
+import traceback
 import pandas as pd
 import streamlit as st
 # Dependências Google (apenas necessárias se usar Service Account)
@@ -182,16 +183,23 @@ def load_sheet(sheet_url_or_id: str):
         st.info(f"📂 Abrindo Sheet com ID: {sheet_id}...")
         sh = client.open_by_key(sheet_id)
         st.success(f"✅ Sheet aberto: {sh.title}")
+    except PermissionError as e:
+        error_msg = f"❌ PermissionError ao abrir Sheet"
+        st.error(error_msg)
+        st.code(f"Erro completo: {str(e)}\nTipo: {type(e)}\nArgs: {e.args}", language="text")
+        st.code(traceback.format_exc(), language="text")
+        st.info(
+            "**Possíveis causas:**\n"
+            "- Problema com as credenciais da Service Account\n"
+            "- Permissões insuficientes no Google Cloud Console\n"
+            "- APIs não ativadas no projeto\n"
+        )
+        return pd.DataFrame(), pd.DataFrame(), error_msg
     except gspread.exceptions.APIError as e:
         error_msg = f"❌ Erro da API do Google: {e.response.status_code}"
         st.error(error_msg)
         st.code(f"Status: {e.response.status_code}\nResposta: {e.response.text}", language="text")
-        st.info(
-            "**Possíveis causas:**\n"
-            "- API do Google Sheets desativada no projeto\n"
-            "- Quota excedida\n"
-            "- Permissões insuficientes\n"
-        )
+        st.code(traceback.format_exc(), language="text")
         return pd.DataFrame(), pd.DataFrame(), error_msg
     except gspread.exceptions.SpreadsheetNotFound:
         error_msg = f"❌ Sheet não encontrado! ID: {sheet_id}"
@@ -206,11 +214,8 @@ def load_sheet(sheet_url_or_id: str):
     except Exception as e:
         error_msg = f"❌ Erro inesperado: {type(e).__name__}"
         st.error(error_msg)
-        st.code(f"Tipo: {type(e).__name__}\nMensagem: {str(e)}", language="text")
-        
-        # Tenta extrair mais informações
-        if hasattr(e, 'response'):
-            st.code(f"Response: {e.response}", language="text")
+        st.code(f"Tipo: {type(e).__name__}\nMensagem: {str(e)}\nArgs: {e.args}", language="text")
+        st.code(traceback.format_exc(), language="text")
         
         st.info(
             "**Verifique:**\n"
@@ -226,9 +231,10 @@ def load_sheet(sheet_url_or_id: str):
         ws_ml = sh.worksheet("modelos_loras")
         st.success("✅ Folha 'modelos_loras' encontrada")
     except Exception as e:
-        error_msg = f"❌ Folha 'modelos_loras' não encontrada: {type(e).__name__}: {str(e)}"
+        error_msg = f"❌ Folha 'modelos_loras' não encontrada"
         st.error(error_msg)
-        st.code(str(e), language="text")
+        st.code(f"Erro: {str(e)}", language="text")
+        st.code(traceback.format_exc(), language="text")
         return pd.DataFrame(), pd.DataFrame(), error_msg
     
     try:
@@ -236,9 +242,10 @@ def load_sheet(sheet_url_or_id: str):
         ws_wf = sh.worksheet("workflows")
         st.success("✅ Folha 'workflows' encontrada")
     except Exception as e:
-        error_msg = f"❌ Folha 'workflows' não encontrada: {type(e).__name__}: {str(e)}"
+        error_msg = f"❌ Folha 'workflows' não encontrada"
         st.error(error_msg)
-        st.code(str(e), language="text")
+        st.code(f"Erro: {str(e)}", language="text")
+        st.code(traceback.format_exc(), language="text")
         return pd.DataFrame(), pd.DataFrame(), error_msg
     
     try:
@@ -247,9 +254,10 @@ def load_sheet(sheet_url_or_id: str):
         df_wf = pd.DataFrame(ws_wf.get_all_records()).fillna("")
         st.success(f"✅ Dados carregados: {len(df_ml)} modelos/LoRAs, {len(df_wf)} workflows")
     except Exception as e:
-        error_msg = f"❌ Erro ao ler dados: {type(e).__name__}: {str(e)}"
+        error_msg = f"❌ Erro ao ler dados"
         st.error(error_msg)
-        st.code(str(e), language="text")
+        st.code(f"Erro: {str(e)}", language="text")
+        st.code(traceback.format_exc(), language="text")
         return pd.DataFrame(), pd.DataFrame(), error_msg
     
     # Normalização
