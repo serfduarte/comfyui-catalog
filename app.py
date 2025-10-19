@@ -377,10 +377,20 @@ with tab1:
             st.download_button("📥 Exportar CSV", csv, "modelos_loras_filtrados.csv", "text/csv", use_container_width=True)
     
     if len(filtered_ml) > 0:
+        column_config = {
+            "tipo": st.column_config.Column("Tipo", width="medium"),
+            "nome": st.column_config.Column("Nome", width="large"),
+            "base_model": st.column_config.Column("Base Model", width="medium"),
+            "estilo_utilizacao": st.column_config.Column("Estilo/Utilização", width="large"),
+            "dimensions_recomendadas": st.column_config.Column("Dimensões Recomendadas", width="medium"),
+            "strength_tipica": st.column_config.Column("Strength Típica", width="small"),
+        }
+        
         st.dataframe(
             filtered_ml[["tipo", "nome", "base_model", "estilo_utilizacao", "dimensions_recomendadas", "strength_tipica"]],
             use_container_width=True,
-            height=350
+            height=350,
+            column_config=column_config
         )
         
         st.markdown("---")
@@ -500,3 +510,4 @@ Use o botão "🔄 Recarregar dados" para forçar atualização.
     
     st.markdown("---")
     st.caption("🎨 Catálogo ComfyUI | Desenvolvido com Streamlit | © 2025 Sérgio Duarte")
+
