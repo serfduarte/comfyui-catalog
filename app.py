@@ -8,9 +8,9 @@ import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 
-# =========================
+# ====
 # CONFIGURAÇÃO STREAMLIT
-# =========================
+# ====
 st.set_page_config(
     page_title="Catálogo ComfyUI - Sérgio Duarte",
     page_icon="🎨",
@@ -20,9 +20,9 @@ st.set_page_config(
 st.title("🎨 Catálogo ComfyUI")
 st.caption("Modelos, LoRAs e Workflows organizados | por Sérgio Duarte")
 
-# =========================
+# ====
 # UTILITÁRIOS
-# =========================
+# ====
 def extract_sheet_id(url_or_id: str) -> str:
     """
     Aceita URL completa do Google Sheet OU Sheet ID e retorna o ID.
@@ -53,9 +53,9 @@ def ensure_cols(df, cols):
             df[c] = ""
     return df
 
-# =========================
+# ====
 # DEBUG HELPER
-# =========================
+# ====
 def show_debug_info():
     """Mostra informações de debug sobre os Secrets"""
     st.sidebar.markdown("---")
@@ -82,29 +82,29 @@ def show_debug_info():
                 st.sidebar.error(f"❌ Campos faltando: {', '.join(missing)}")
             else:
                 st.sidebar.success("✅ Todos os campos obrigatórios presentes")
-                
+            
             # Valida private_key
             pk = sa.get("private_key", "")
             if pk:
-                if not pk.startswith("-----BEGIN PRIVATE KEY-----"):
-                    st.sidebar.error("❌ private_key não começa com '-----BEGIN PRIVATE KEY-----'")
-                elif not pk.endswith("-----END PRIVATE KEY-----\n"):
+                if not pk.startswith("----BEGIN PRIVATE KEY----"):
+                    st.sidebar.error("❌ private_key não começa com '----BEGIN PRIVATE KEY----'")
+                elif not pk.endswith("----END PRIVATE KEY----\n"):
                     st.sidebar.warning("⚠️ private_key pode não terminar corretamente")
                 else:
                     st.sidebar.success("✅ private_key parece válida")
-                    
+                
                 # Conta linhas
                 lines = pk.count("\n")
                 st.sidebar.write(f"📝 private_key tem {lines} quebras de linha")
             else:
                 st.sidebar.error("❌ private_key está vazia")
-                
+            
         except Exception as e:
             st.sidebar.error(f"❌ Erro ao ler secrets: {e}")
 
-# =========================
+# ====
 # AUTENTICAÇÃO GOOGLE
-# =========================
+# ====
 @st.cache_resource
 def get_google_client():
     """
@@ -301,9 +301,9 @@ def filter_workflows(df, filtro_objetivo, filtro_search):
         filtered = filtered[mask]
     return filtered.reset_index(drop=True)
 
-# =========================
+# ====
 # ENTRADA: Sheet URL/ID
-# =========================
+# ====
 DEFAULT_URL = "1VucFVrJuS7iIwXA3kMDb2pvHnGqBRbRyAkWv73xdLvw"
 SHEET_URL = st.secrets.get("sheet_url", DEFAULT_URL)
 
@@ -336,9 +336,9 @@ with st.sidebar:
     filtro_objetivo = st.text_input("Objetivo contém", "", placeholder="ex: Retrato realista...")
     filtro_search_wf = st.text_input("Pesquisa livre (nome/nodes)", "", placeholder="ex: KSampler, HighRes...")
 
-# =========================
+# ====
 # CARREGAR DADOS
-# =========================
+# ====
 with st.spinner("📥 Carregando dados do Google Sheet..."):
     df_ml, df_wf, error = load_sheet(st.session_state["sheet_url_input"])
 
@@ -346,9 +346,9 @@ if error:
     st.error(f"❌ {error}")
     st.stop()
 
-# =========================
+# ====
 # VALIDAR COLUNAS
-# =========================
+# ====
 df_ml = ensure_cols(df_ml, [
     "tipo", "nome", "base_model", "estilo_utilizacao", "dimensions_recomendadas",
     "strength_tipica", "notas", "fonte_url", "caminho_local", "ultima_atualizacao"
@@ -359,9 +359,9 @@ df_wf = ensure_cols(df_wf, [
     "tempo_medio", "qualidade_esperada", "link", "versao", "ultima_atualizacao"
 ])
 
-# =========================
+# ====
 # TABS
-# =========================
+# ====
 tab1, tab2, tab3 = st.tabs(["📦 Modelos/LoRAs", "⚡ Workflows", "ℹ️ Sobre"])
 
 with tab1:
@@ -378,12 +378,12 @@ with tab1:
     
     if len(filtered_ml) > 0:
         column_config = {
-            "tipo": st.column_config.Column("Tipo", width="medium"),
-            "nome": st.column_config.Column("Nome", width="large"),
-            "base_model": st.column_config.Column("Base Model", width="medium"),
-            "estilo_utilizacao": st.column_config.Column("Estilo/Utilização", width="large"),
-            "dimensions_recomendadas": st.column_config.Column("Dimensões Recomendadas", width="medium"),
-            "strength_tipica": st.column_config.Column("Strength Típica", width="small"),
+            "tipo": st.column_config.Column("Tipo", width=150),
+            "nome": st.column_config.Column("Nome", width=300),
+            "base_model": st.column_config.Column("Base Model", width=150),
+            "estilo_utilizacao": st.column_config.Column("Estilo/Utilização", width=300),
+            "dimensions_recomendadas": st.column_config.Column("Dimensões Recomendadas", width=150),
+            "strength_tipica": st.column_config.Column("Strength Típica", width=100),
         }
         
         st.dataframe(
@@ -392,7 +392,7 @@ with tab1:
             height=350,
             column_config=column_config
         )
-        
+    
         st.markdown("---")
         st.subheader("🔎 Detalhes")
         nomes = filtered_ml["nome"].tolist()
@@ -416,11 +416,11 @@ with tab1:
             fonte = row.get("fonte_url", "")
             if fonte and fonte.startswith("http"):
                 st.markdown(f"🔗 [Abrir fonte/URL]({fonte})")
-        
-        notas = row.get("notas", "")
-        if notas:
-            st.markdown("**📝 Notas:**")
-            st.info(notas)
+            
+            notas = row.get("notas", "")
+            if notas:
+                st.markdown("**📝 Notas:**")
+                st.info(notas)
     else:
         st.warning("⚠️ Nenhum item encontrado com os filtros atuais")
 
@@ -442,7 +442,7 @@ with tab2:
             use_container_width=True,
             height=350
         )
-        
+    
         st.markdown("---")
         st.subheader("🔎 Detalhes do Workflow")
         nomes = filtered_wf["nome"].tolist()
@@ -462,24 +462,24 @@ with tab2:
             if link:
                 st.text("Link/Caminho:")
                 st.code(link)
-        
-        deps = row.get("dependencias", "")
-        if deps:
-            st.markdown("**📦 Dependências:**")
-            st.info(deps)
-        
-        nodes = row.get("nodes_principais", "")
-        if nodes:
-            st.markdown("**🛠️ Nodes principais:**")
-            st.code(nodes)
-        
-        ks = row.get("ksampler_recomendado", "")
-        if ks:
-            st.markdown("**⚙️ KSampler recomendado:**")
-            try:
-                st.json(json.loads(ks))
-            except Exception:
-                st.code(ks, language="json")
+            
+            deps = row.get("dependencias", "")
+            if deps:
+                st.markdown("**📦 Dependências:**")
+                st.info(deps)
+            
+            nodes = row.get("nodes_principais", "")
+            if nodes:
+                st.markdown("**🛠️ Nodes principais:**")
+                st.code(nodes)
+            
+            ks = row.get("ksampler_recomendado", "")
+            if ks:
+                st.markdown("**⚙️ KSampler recomendado:**")
+                try:
+                    st.json(json.loads(ks))
+                except Exception:
+                    st.code(ks, language="json")
     else:
         st.warning("⚠️ Nenhum workflow encontrado com os filtros atuais")
 
@@ -510,4 +510,3 @@ Use o botão "🔄 Recarregar dados" para forçar atualização.
     
     st.markdown("---")
     st.caption("🎨 Catálogo ComfyUI | Desenvolvido com Streamlit | © 2025 Sérgio Duarte")
-
