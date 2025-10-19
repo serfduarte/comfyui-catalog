@@ -378,16 +378,23 @@ with tab1:
     
     if len(filtered_ml) > 0:
         column_config = {
-            "tipo": st.column_config.Column("Tipo", width=150),
-            "nome": st.column_config.Column("Nome", width=300),
-            "base_model": st.column_config.Column("Base Model", width=150),
-            "estilo_utilizacao": st.column_config.Column("Estilo/Utilização", width=300),
+            "tipo": st.column_config.Column("Tipo", width=100),
+            "nome": st.column_config.Column("Nome", width=250),
+            "base_model": st.column_config.Column("Base Model", width=120),
+            "estilo_utilizacao": st.column_config.Column("Estilo/Utilização", width=200),
             "dimensions_recomendadas": st.column_config.Column("Dimensões Recomendadas", width=150),
             "strength_tipica": st.column_config.Column("Strength Típica", width=100),
+            "notas": st.column_config.Column("Notas", width=300),
+            "fonte_url": st.column_config.Column("Fonte URL", width=200),
+            "caminho_local": st.column_config.Column("Caminho Local", width=200),
+            "ultima_atualizacao": st.column_config.Column("Última Atualização", width=120),
         }
         
         st.dataframe(
-            filtered_ml[["tipo", "nome", "base_model", "estilo_utilizacao", "dimensions_recomendadas", "strength_tipica"]],
+            filtered_ml[[
+                "tipo", "nome", "base_model", "estilo_utilizacao", "dimensions_recomendadas",
+                "strength_tipica", "notas", "fonte_url", "caminho_local", "ultima_atualizacao"
+            ]],
             use_container_width=True,
             height=350,
             column_config=column_config
@@ -437,10 +444,27 @@ with tab2:
             st.download_button("📥 Exportar CSV", csv, "workflows_filtrados.csv", "text/csv", use_container_width=True)
     
     if len(filtered_wf) > 0:
+        column_config_wf = {
+            "nome": st.column_config.Column("Nome", width=250),
+            "objetivo": st.column_config.Column("Objetivo", width=300),
+            "nodes_principais": st.column_config.Column("Nodes Principais", width=300),
+            "ksampler_recomendado": st.column_config.Column("KSampler Recomendado", width=150),
+            "dependencias": st.column_config.Column("Dependências", width=200),
+            "tempo_medio": st.column_config.Column("Tempo Médio", width=100),
+            "qualidade_esperada": st.column_config.Column("Qualidade Esperada", width=150),
+            "link": st.column_config.Column("Link", width=200),
+            "versao": st.column_config.Column("Versão", width=100),
+            "ultima_atualizacao": st.column_config.Column("Última Atualização", width=120),
+        }
+        
         st.dataframe(
-            filtered_wf[["nome", "objetivo", "tempo_medio", "qualidade_esperada", "versao"]],
+            filtered_wf[[
+                "nome", "objetivo", "nodes_principais", "ksampler_recomendado", "dependencias",
+                "tempo_medio", "qualidade_esperada", "link", "versao", "ultima_atualizacao"
+            ]],
             use_container_width=True,
-            height=350
+            height=350,
+            column_config=column_config_wf
         )
     
         st.markdown("---")
